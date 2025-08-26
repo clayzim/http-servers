@@ -35,14 +35,13 @@ type serverState struct {
 }
 
 // Increment metrics then run typical handler
-// Takes a handler
-// Returns a closure that satisfies the
-// HTTP handler function signature
-func (state *serverState) mwMetricsInc(next http.Handler) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+// Wraps a handler in a handler with added logic
+func (state *serverState) mwMetricsInc(next http.Handler) http.Handler {
+	// Wrap function with HandlerFunc to return a Handler
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		state.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
-	}
+	})
 }
 
 // Metrics endpoint
@@ -75,7 +74,7 @@ func main() {
 	srvState := serverState{}
 	// StripPrefix means any path not prefixed "/app/" responds status 404 Not Found
 	appHandler := http.StripPrefix("/app/", http.FileServer(http.Dir(".")))
-	mux.HandleFunc("/app/", srvState.mwMetricsInc(appHandler))
+	mux.Handle("/app/", srvState.mwMetricsInc(appHandler))
 	// Readiness endpoint path based on Kubernetes pattern
 	mux.HandleFunc("/healthz", readiness)
 	mux.HandleFunc("/metrics", srvState.metrics)
