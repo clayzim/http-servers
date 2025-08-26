@@ -27,7 +27,8 @@ func readiness(w http.ResponseWriter, r *http.Request) {
 func main() {
 	mux := http.NewServeMux()
 	server := http.Server{Handler: mux, Addr: ":8080"}
-	mux.Handle("/", http.FileServer(http.Dir(".")))
+	// StripPrefix means any path not prefixed "/app/" responds status 404 Not Found
+	mux.Handle("/app/", http.StripPrefix("/app/", http.FileServer(http.Dir("."))))
 	// Readiness endpoint path based on Kubernetes pattern
 	mux.HandleFunc("/healthz", readiness)
 
