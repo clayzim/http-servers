@@ -76,12 +76,26 @@ func (state *serverState) reset(w http.ResponseWriter, r *http.Request) {
 // Silly rule that limits Chrips' character count
 const MaxChirpLength = 140;
 
-func makeJSON(in map[string]any) (out []byte) {
+func respondWithJSON(w http.ResponseWriter, code int, in any) {
 	out, err := json.Marshal(in)
 	if err != nil {
 		log.Printf("failed to marshal JSON: %s", err)
 	}
-	return out
+
+	w.Header().Add("content-type", "application/json")
+	w.WriteHeader(code)
+	w.Write(out)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	if code >= 500 {
+		log.Printf("responding with server error: %s\n", msg)
+	}
+	type errResponse struct {
+		Error string `json:"error"`
+	}
+
+	respondWithJSON(w, code, errResponse{Error: msg})
 }
 
 func validate_chirp(w http.ResponseWriter, r *http.Request) {
@@ -103,32 +117,20 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	}
 	// End reading JSON Chirp body
 
-	// At this point, we will return JSON, so set appropriate header
-	w.Header().Add("content-type", "application/json")
-
 	len := utf8.RuneCountInString(req.Body)
-	// TODO: Refactor error cases to share code
 	// Send error for empty chirp
 	if len <= 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		jsonErrEmpty := makeJSON(map[string]any{"error": "Chirp cannot be empty"})
-		w.Write(jsonErrEmpty)
+		respondWithError(w, http.StatusBadRequest, "Chirp cannot be empty")
 		return
 	}
 	// Send error for too-long chirp
 	if len > MaxChirpLength {
-		// 400 Bad Request, JSON body with custom error text for client
-		// end the handler
-		w.WriteHeader(http.StatusBadRequest)
-		jsonErrTooLong := makeJSON(map[string]any{"error": "Chirp is too long"})
-		w.Write(jsonErrTooLong)
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
 
-	// 200 OK, JSON body with {"valid": true}
-	w.WriteHeader(http.StatusOK)
-	jsonValid := makeJSON(map[string]any{"valid": true})
-	w.Write(jsonValid)
+	validResponse := map[string]any{"valid": true}
+	respondWithJSON(w, http.StatusOK, validResponse)
 }
 
 func main() {
