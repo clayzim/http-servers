@@ -76,9 +76,9 @@ func main() {
 	appHandler := http.StripPrefix("/app/", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", srvState.mwMetricsInc(appHandler))
 	// Readiness endpoint path based on Kubernetes pattern
-	mux.HandleFunc("GET /healthz", readiness)
-	mux.HandleFunc("GET /metrics", srvState.metrics)
-	mux.HandleFunc("POST /reset", srvState.reset)
+	mux.HandleFunc("GET /api/healthz", readiness)
+	mux.HandleFunc("GET /api/metrics", srvState.metrics)
+	mux.HandleFunc("POST /api/reset", srvState.reset)
 
 	err := server.ListenAndServe()
 	if err != nil {
