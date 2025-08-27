@@ -48,12 +48,17 @@ func (state *serverState) mwMetricsInc(next http.Handler) http.Handler {
 // Body: plaintext with number of requests processed since server was started
 // Method on serverState to access its member fields
 func (state *serverState) metrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("content-type", "text/plain; charset=utf-8")
+	w.Header().Add("content-type", "text/html")
 	// For status OK, this could be implicit with w.Write call
 	// TODO: Optionally return 503: Service Unavailable if server isn't ready
 	w.WriteHeader(http.StatusOK)
 	// Atomically accesses the number of hits
-	_, err := fmt.Fprintf(w, "Hits: %d", state.fileserverHits.Load())
+	_, err := fmt.Fprintf(w, `<html>
+	<body>
+    	<h1>Welcome, Chirpy Admin</h1>
+    	<p>Chirpy has been visited %d times!</p>
+	</body>
+</html>`, state.fileserverHits.Load())
 	if err != nil {
 		log.Printf("failed to write metrics response: %s\n", err)
 		// TODO: Respond with 5XX status
@@ -77,8 +82,8 @@ func main() {
 	mux.Handle("/app/", srvState.mwMetricsInc(appHandler))
 	// Readiness endpoint path based on Kubernetes pattern
 	mux.HandleFunc("GET /api/healthz", readiness)
-	mux.HandleFunc("GET /api/metrics", srvState.metrics)
-	mux.HandleFunc("POST /api/reset", srvState.reset)
+	mux.HandleFunc("GET /admin/metrics", srvState.metrics)
+	mux.HandleFunc("POST /admin/reset", srvState.reset)
 
 	err := server.ListenAndServe()
 	if err != nil {
