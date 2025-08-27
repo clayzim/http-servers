@@ -98,24 +98,25 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 	respondWithJSON(w, code, errResponse{Error: msg})
 }
 
-func validate_chirp(w http.ResponseWriter, r *http.Request) {
-	// TODO: Refactor parsing body into its own function
-	// Begin reading JSON Chirp body
-	type parameters struct {
-		Body string `json:"body"`
-	}
+type bodyRequest struct {
+	Body string `json:"body"`
+}
 
+func readJSONBody(r *http.Request) (bodyRequest, error) {
 	decoder := json.NewDecoder(r.Body)
-	req := parameters{}
-	err := decoder.Decode(&req)
+	request := bodyRequest{}
+	err := decoder.Decode((&request))
+	return request, err
+}
+
+func validate_chirp(w http.ResponseWriter, r *http.Request) {
+	// Read JSON Chirp body
+	req, err := readJSONBody(r)
 	if err != nil {
-		// Log failure, respond 500, end handler
-		// We can't validate a body we can't parse
-		log.Printf("failed to decode parameters: %s", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		log.Printf("failed to decode JSON: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to parse Chirp")
 		return
 	}
-	// End reading JSON Chirp body
 
 	len := utf8.RuneCountInString(req.Body)
 	// Send error for empty chirp
