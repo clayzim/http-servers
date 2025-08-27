@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"unicode/utf8"
 )
@@ -109,6 +111,28 @@ func readJSONBody(r *http.Request) (bodyRequest, error) {
 	return request, err
 }
 
+var profanity = []string{
+	"kerfuffle",
+	"sharbert",
+	"fornax",
+}
+
+// TODO: Increase sensitivity so punctuation can't cause a false negative
+func censorProfanity(in string) (cleaned string) {
+	const censor string = "****"
+	// TODO: Consider using regex to substitute in place
+	words := strings.Split(in, " ")
+	for i, word := range words {
+		// Is lowercased word in profane dictionary?
+		if slices.Contains(profanity, strings.ToLower(word)) {
+			// Overwrite that word with asterisks
+			words[i] = censor
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
 func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	// Read JSON Chirp body
 	req, err := readJSONBody(r)
@@ -117,8 +141,9 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to parse Chirp")
 		return
 	}
+	chirp := req.Body
 
-	len := utf8.RuneCountInString(req.Body)
+	len := utf8.RuneCountInString(chirp)
 	// Send error for empty chirp
 	if len <= 0 {
 		respondWithError(w, http.StatusBadRequest, "Chirp cannot be empty")
@@ -130,8 +155,11 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validResponse := map[string]any{"valid": true}
-	respondWithJSON(w, http.StatusOK, validResponse)
+	// If length check passes, replace profane words
+	cleaned := censorProfanity(chirp)
+
+	cleanedResponse := map[string]any{"cleaned_body": cleaned}
+	respondWithJSON(w, http.StatusOK, cleanedResponse)
 }
 
 func main() {
