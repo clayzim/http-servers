@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 // Readiness endpoint
@@ -66,11 +68,67 @@ func (state *serverState) metrics(w http.ResponseWriter, r *http.Request) {
 }
 
 // Set fileserver hits to 0
-// TODO: Consider HTTP semantics, probably only some
-// HTTP methods should work
 func (state *serverState) reset(w http.ResponseWriter, r *http.Request) {
 	state.fileserverHits.Store(0)
 	w.WriteHeader(http.StatusOK)
+}
+
+// Silly rule that limits Chrips' character count
+const MaxChirpLength = 140;
+
+func makeJSON(in map[string]any) (out []byte) {
+	out, err := json.Marshal(in)
+	if err != nil {
+		log.Printf("failed to marshal JSON: %s", err)
+	}
+	return out
+}
+
+func validate_chirp(w http.ResponseWriter, r *http.Request) {
+	// TODO: Refactor parsing body into its own function
+	// Begin reading JSON Chirp body
+	type parameters struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	req := parameters{}
+	err := decoder.Decode(&req)
+	if err != nil {
+		// Log failure, respond 500, end handler
+		// We can't validate a body we can't parse
+		log.Printf("failed to decode parameters: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	// End reading JSON Chirp body
+
+	// At this point, we will return JSON, so set appropriate header
+	w.Header().Add("content-type", "application/json")
+
+	len := utf8.RuneCountInString(req.Body)
+	// TODO: Refactor error cases to share code
+	// Send error for empty chirp
+	if len <= 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		jsonErrEmpty := makeJSON(map[string]any{"error": "Chirp cannot be empty"})
+		w.Write(jsonErrEmpty)
+		return
+	}
+	// Send error for too-long chirp
+	if len > MaxChirpLength {
+		// 400 Bad Request, JSON body with custom error text for client
+		// end the handler
+		w.WriteHeader(http.StatusBadRequest)
+		jsonErrTooLong := makeJSON(map[string]any{"error": "Chirp is too long"})
+		w.Write(jsonErrTooLong)
+		return
+	}
+
+	// 200 OK, JSON body with {"valid": true}
+	w.WriteHeader(http.StatusOK)
+	jsonValid := makeJSON(map[string]any{"valid": true})
+	w.Write(jsonValid)
 }
 
 func main() {
@@ -84,6 +142,7 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", readiness)
 	mux.HandleFunc("GET /admin/metrics", srvState.metrics)
 	mux.HandleFunc("POST /admin/reset", srvState.reset)
+	mux.HandleFunc("POST /api/validate_chirp", validate_chirp)
 
 	err := server.ListenAndServe()
 	if err != nil {
