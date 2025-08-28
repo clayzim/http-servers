@@ -107,14 +107,10 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 	respondWithJSON(w, code, errResponse{Error: msg})
 }
 
-type bodyRequest struct {
-	Body string `json:"body"`
-}
-
-// TODO: Update interface to return a string
-func readJSONBody(r *http.Request) (bodyRequest, error) {
+// TODO: Update to handle non-string JSON value types
+func readJSONBody(r *http.Request) (map[string]string, error) {
 	decoder := json.NewDecoder(r.Body)
-	request := bodyRequest{}
+	request := make(map[string]string)
 	err := decoder.Decode((&request))
 	return request, err
 }
@@ -149,7 +145,9 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to parse Chirp")
 		return
 	}
-	chirp := req.Body
+	// Ignore presence of "body", since chirp
+	// zero value is handled below
+	chirp, _ := req["body"]
 
 	len := utf8.RuneCountInString(chirp)
 	// Send error for empty chirp
