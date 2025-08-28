@@ -86,19 +86,18 @@ func (state *serverState) reset(w http.ResponseWriter, r *http.Request) {
 // Silly rule that limits Chrips' character count
 const MaxChirpLength = 140;
 
-// TODO: Maybe this should be multiple types
-// with a shared interface? For different types
-// of response
-type jsonResponse struct {
-	Error string `json:"error"`
+type chirpResponse struct {
 	CleanedBody string `json:"cleaned_body"`
+}
+
+type userResponse struct {
 	Id string `json:"id"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Email string `json:"email"`
 }
 
-func respondWithJSON(w http.ResponseWriter, code int, in jsonResponse) {
+func respondWithJSON(w http.ResponseWriter, code int, in any) {
 	out, err := json.Marshal(in)
 	if err != nil {
 		log.Printf("failed to marshal JSON: %s\n", err)
@@ -113,7 +112,10 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 	if code >= 500 {
 		log.Printf("responding with server error: %s\n", msg)
 	}
-	respondWithJSON(w, code, jsonResponse{Error: msg})
+	type errResponse struct {
+		Error string `json:"error"`
+	}
+	respondWithJSON(w, code, errResponse{Error: msg})
 }
 
 // Typesafe whitelist of valid JSON parameters in
@@ -180,7 +182,7 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 
 	// If length check passes, replace profane words
 	cleaned := censorProfanity(chirp)
-	respondWithJSON(w, http.StatusOK, jsonResponse{CleanedBody: cleaned})
+	respondWithJSON(w, http.StatusOK, chirpResponse{CleanedBody: cleaned})
 }
 
 func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +197,7 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// TODO: Handle zero value (empty email)
-	// TODO: Avoid creating duplicate accounts for one email
+	// Duplicates are disallowed by database schema
 	email := req.Email
 
 	user, err := cfg.db.CreateUser(r.Context(), email)
@@ -204,11 +206,12 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 			w,
 			http.StatusInternalServerError,
 			"Failed to create user")
+		return
 	}
 	respondWithJSON(
 		w,
 		http.StatusCreated,
-		jsonResponse{
+		userResponse{
 			Id: user.ID.String(),
 			CreatedAt: user.CreatedAt.Format(time.RFC3339),
 			UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
