@@ -1,14 +1,20 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"unicode/utf8"
+
+	"github.com/clayzim/http-servers/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 // Readiness endpoint
@@ -36,6 +42,7 @@ func readiness(w http.ResponseWriter, r *http.Request) {
 type serverState struct {
 	// Atomic so multiple goroutines can share the value
 	fileserverHits atomic.Int32
+	dbQueries *database.Queries
 }
 
 // Increment metrics then run typical handler
@@ -104,6 +111,7 @@ type bodyRequest struct {
 	Body string `json:"body"`
 }
 
+// TODO: Update interface to return a string
 func readJSONBody(r *http.Request) (bodyRequest, error) {
 	decoder := json.NewDecoder(r.Body)
 	request := bodyRequest{}
@@ -163,9 +171,22 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Establish database connection
+	// Load contents of .env file into environment variables
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %s\n", err)
+	}
+
 	mux := http.NewServeMux()
 	server := http.Server{Handler: mux, Addr: ":8080"}
-	srvState := serverState{}
+	srvState := serverState{
+		// Supply database connection for handler use
+		dbQueries: database.New(db),
+	}
+
 	// StripPrefix means any path not prefixed "/app/" responds status 404 Not Found
 	appHandler := http.StripPrefix("/app/", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", srvState.mwMetricsInc(appHandler))
@@ -175,7 +196,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", srvState.reset)
 	mux.HandleFunc("POST /api/validate_chirp", validate_chirp)
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		fmt.Println(err)
 	}
