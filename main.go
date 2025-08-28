@@ -18,6 +18,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const devPlatform string = "dev"
+
 // Readiness endpoint
 // Route: /healthz
 // Method: any
@@ -44,6 +46,7 @@ type serverState struct {
 	// Atomic so multiple goroutines can share the value
 	fileserverHits atomic.Int32
 	db *database.Queries
+	platform string
 }
 
 // Increment metrics then run typical handler
@@ -78,9 +81,29 @@ func (state *serverState) metrics(w http.ResponseWriter, r *http.Request) {
 }
 
 // Set fileserver hits to 0
-func (state *serverState) reset(w http.ResponseWriter, r *http.Request) {
-	state.fileserverHits.Store(0)
-	w.WriteHeader(http.StatusOK)
+func (cfg *serverState) reset(w http.ResponseWriter, r *http.Request) {
+	// Not a development environment?
+	// Respond "Forbidden" and do nothing
+	if cfg.platform != devPlatform {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	// Delete all users from the database
+	err := cfg.db.DeleteAllUsers(r.Context())
+	if err != nil {
+		// If that query fails, 500 and return
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to delete all users",
+		)
+		return
+	}
+	cfg.fileserverHits.Store(0)
+	// Confirm successful deletion by indicating
+	// the lack of content
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Silly rule that limits Chrips' character count
@@ -224,6 +247,7 @@ func main() {
 	// Establish database connection
 	// Load contents of .env file into environment variables
 	godotenv.Load()
+	platform := os.Getenv("PLATFORM")
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -235,6 +259,7 @@ func main() {
 	srvState := serverState{
 		// Supply database connection for handler use
 		db: database.New(db),
+		platform: platform,
 	}
 
 	// StripPrefix means any path not prefixed "/app/" responds status 404 Not Found
