@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/clayzim/http-servers/internal/database"
@@ -42,7 +43,7 @@ func readiness(w http.ResponseWriter, r *http.Request) {
 type serverState struct {
 	// Atomic so multiple goroutines can share the value
 	fileserverHits atomic.Int32
-	dbQueries *database.Queries
+	db *database.Queries
 }
 
 // Increment metrics then run typical handler
@@ -97,7 +98,7 @@ type jsonResponse struct {
 	Email string `json:"email"`
 }
 
-func respondWithJSON(w http.ResponseWriter, code int, in any) {
+func respondWithJSON(w http.ResponseWriter, code int, in jsonResponse) {
 	out, err := json.Marshal(in)
 	if err != nil {
 		log.Printf("failed to marshal JSON: %s\n", err)
@@ -193,10 +194,27 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	// TODO: Handle zero value
+	// TODO: Handle zero value (empty email)
+	// TODO: Avoid creating duplicate accounts for one email
 	email := req.Email
 
 	user, err := cfg.db.CreateUser(r.Context(), email)
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to create user")
+	}
+	respondWithJSON(
+		w,
+		http.StatusCreated,
+		jsonResponse{
+			Id: user.ID.String(),
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+			UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+			Email: user.Email,
+		},
+	)
 }
 
 func main() {
@@ -213,7 +231,7 @@ func main() {
 	server := http.Server{Handler: mux, Addr: ":8080"}
 	srvState := serverState{
 		// Supply database connection for handler use
-		dbQueries: database.New(db),
+		db: database.New(db),
 	}
 
 	// StripPrefix means any path not prefixed "/app/" responds status 404 Not Found
@@ -224,6 +242,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", srvState.metrics)
 	mux.HandleFunc("POST /admin/reset", srvState.reset)
 	mux.HandleFunc("POST /api/validate_chirp", validate_chirp)
+	mux.HandleFunc("POST /api/users", srvState.createUser)
 
 	err = server.ListenAndServe()
 	if err != nil {
