@@ -85,10 +85,22 @@ func (state *serverState) reset(w http.ResponseWriter, r *http.Request) {
 // Silly rule that limits Chrips' character count
 const MaxChirpLength = 140;
 
+// TODO: Maybe this should be multiple types
+// with a shared interface? For different types
+// of response
+type jsonResponse struct {
+	Error string `json:"error"`
+	CleanedBody string `json:"cleaned_body"`
+	Id string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Email string `json:"email"`
+}
+
 func respondWithJSON(w http.ResponseWriter, code int, in any) {
 	out, err := json.Marshal(in)
 	if err != nil {
-		log.Printf("failed to marshal JSON: %s", err)
+		log.Printf("failed to marshal JSON: %s\n", err)
 	}
 
 	w.Header().Add("content-type", "application/json")
@@ -100,17 +112,21 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 	if code >= 500 {
 		log.Printf("responding with server error: %s\n", msg)
 	}
-	type errResponse struct {
-		Error string `json:"error"`
-	}
-
-	respondWithJSON(w, code, errResponse{Error: msg})
+	respondWithJSON(w, code, jsonResponse{Error: msg})
 }
 
-// TODO: Update to handle non-string JSON value types
-func readJSONBody(r *http.Request) (map[string]string, error) {
+// Typesafe whitelist of valid JSON parameters in
+// request bodies
+type jsonRequest struct {
+	Body string `json:"body"`
+	Email string `json:"email"`
+}
+
+// Callers to this must handle the zero value case for
+// the JSON parameter value they intend to use
+func readJSONBody(r *http.Request) (jsonRequest, error) {
 	decoder := json.NewDecoder(r.Body)
-	request := make(map[string]string)
+	request := jsonRequest{}
 	err := decoder.Decode((&request))
 	return request, err
 }
@@ -141,13 +157,13 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	// Read JSON Chirp body
 	req, err := readJSONBody(r)
 	if err != nil {
-		log.Printf("failed to decode JSON: %s", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to parse Chirp")
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to parse Chirp")
 		return
 	}
-	// Ignore presence of "body", since chirp
-	// zero value is handled below
-	chirp, _ := req["body"]
+	chirp := req.Body
 
 	len := utf8.RuneCountInString(chirp)
 	// Send error for empty chirp
@@ -163,9 +179,24 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 
 	// If length check passes, replace profane words
 	cleaned := censorProfanity(chirp)
+	respondWithJSON(w, http.StatusOK, jsonResponse{CleanedBody: cleaned})
+}
 
-	cleanedResponse := map[string]any{"cleaned_body": cleaned}
-	respondWithJSON(w, http.StatusOK, cleanedResponse)
+func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
+	// Read user email
+	req, err := readJSONBody(r)
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to parse user email",
+		)
+		return
+	}
+	// TODO: Handle zero value
+	email := req.Email
+
+	user, err := cfg.db.CreateUser(r.Context(), email)
 }
 
 func main() {
