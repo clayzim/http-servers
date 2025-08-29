@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"unicode/utf8"
 
+	"github.com/clayzim/http-servers/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -83,7 +84,7 @@ type chirpParameters struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
-func validate_chirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *serverState) createChirp(w http.ResponseWriter, r *http.Request) {
 	// Read JSON Chirp body
 	params := chirpParameters{}
 	err := readJSONBody(r, &params)
@@ -94,9 +95,12 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 			"Failed to parse Chirp")
 		return
 	}
-	chirp := params.Body
+	// Nonexistant user_ids are disallowed by database schema
+	// TODO: Add validation that the requester is authorized
+	// to chirp on this user's behalf
+	body := params.Body
 
-	len := utf8.RuneCountInString(chirp)
+	len := utf8.RuneCountInString(body)
 	// Send error for empty chirp
 	if len <= 0 {
 		respondWithError(w, http.StatusBadRequest, "Chirp cannot be empty")
@@ -109,11 +113,20 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If length check passes, replace profane words
-	cleaned := censorProfanity(chirp)
-	type chirpResponse struct {
-		CleanedBody string `json:"cleaned_body"`
+	body = censorProfanity(body)
+	p := database.CreateChirpParams{
+		Body: body,
+		UserID: params.UserID,
 	}
-	respondWithJSON(w, http.StatusOK, chirpResponse{CleanedBody: cleaned})
+	chirp, err := cfg.db.CreateChirp(r.Context(), p)
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to create chirp")
+		return
+	}
+	respondWithJSON(w, http.StatusCreated, Chirp(chirp))
 }
 
 // Valid parameters for a /users request
@@ -145,9 +158,5 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 			"Failed to create user")
 		return
 	}
-	respondWithJSON(
-		w,
-		http.StatusCreated,
-		User(user),
-	)
+	respondWithJSON(w, http.StatusCreated, User(user))
 }

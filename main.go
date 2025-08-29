@@ -58,7 +58,7 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", readiness)
 	mux.HandleFunc("GET /admin/metrics", srvState.metrics)
 	mux.HandleFunc("POST /admin/reset", srvState.reset)
-	mux.HandleFunc("POST /api/chirps", validate_chirp)
+	mux.HandleFunc("POST /api/chirps", srvState.createChirp)
 	mux.HandleFunc("POST /api/users", srvState.createUser)
 
 	err = server.ListenAndServe()
