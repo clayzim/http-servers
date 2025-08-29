@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -147,6 +149,55 @@ func (cfg *serverState) getAllChirps(w http.ResponseWriter, r *http.Request) {
 	}
 	// Write a JSON response with a list of all chirps
 	respondWithJSON(w, http.StatusOK, chirps)
+}
+
+func (cfg *serverState) getChirp(w http.ResponseWriter, r *http.Request) {
+	// Extract chirpID from request URL path
+	idString := r.PathValue("chirpID")
+	// Validate string is UUID
+	if err := uuid.Validate(idString); err != nil {
+		respondWithError(
+			w,
+			http.StatusBadRequest,
+			"Invalid chirp ID",
+		)
+		return
+	}
+	// Parse chirpID into UUID type
+	chirpID, err := uuid.Parse(idString)
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to parse chirp ID",
+		)
+		return
+	}
+	// Execute the database query
+	dbChirp, err := cfg.db.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		// Handle case where no such row exists
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(
+				w,
+				http.StatusNotFound,
+				fmt.Sprintf(
+					"No chirp exists with ID %s",
+					chirpID.String(),
+				),
+			)
+		// Internal Server Error for all other cases
+		} else {
+			respondWithError(
+				w,
+				http.StatusInternalServerError,
+				"Failed to retrieve chirp by ID",
+			)
+		}
+		return
+	}
+	// Wrap chirp in JSON-annotated model
+	respondWithJSON(w, http.StatusOK, Chirp(dbChirp))
 }
 
 // Valid parameters for a /users request
