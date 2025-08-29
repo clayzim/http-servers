@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 // Readiness endpoint
@@ -75,9 +77,16 @@ func (cfg *serverState) reset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Valid parameters for a /chirps request
+type chirpParameters struct {
+	Body string `json:"body"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
 func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	// Read JSON Chirp body
-	req, err := readJSONBody(r)
+	params := chirpParameters{}
+	err := readJSONBody(r, &params)
 	if err != nil {
 		respondWithError(
 			w,
@@ -85,7 +94,7 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 			"Failed to parse Chirp")
 		return
 	}
-	chirp := req.Body
+	chirp := params.Body
 
 	len := utf8.RuneCountInString(chirp)
 	// Send error for empty chirp
@@ -107,9 +116,15 @@ func validate_chirp(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, chirpResponse{CleanedBody: cleaned})
 }
 
+// Valid parameters for a /users request
+type userParameters struct {
+	Email string `json:"email"`
+}
+
 func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 	// Read user email
-	req, err := readJSONBody(r)
+	params := userParameters{}
+	err := readJSONBody(r, &params)
 	if err != nil {
 		respondWithError(
 			w,
@@ -120,7 +135,7 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// TODO: Handle zero value (empty email)
 	// Duplicates are disallowed by database schema
-	email := req.Email
+	email := params.Email
 
 	user, err := cfg.db.CreateUser(r.Context(), email)
 	if err != nil {

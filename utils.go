@@ -8,20 +8,16 @@ import (
 	"strings"
 )
 
-// Typesafe whitelist of valid JSON parameters in
-// request bodies
-type jsonRequest struct {
-	Body string `json:"body"`
-	Email string `json:"email"`
+// Union type of valid JSON parameters
+type jsonParameters interface {
+	userParameters | chirpParameters
 }
 
 // Callers to this must handle the zero value case for
 // the JSON parameter value they intend to use
-func readJSONBody(r *http.Request) (jsonRequest, error) {
+func readJSONBody[T jsonParameters](r *http.Request, params *T) error {
 	decoder := json.NewDecoder(r.Body)
-	request := jsonRequest{}
-	err := decoder.Decode((&request))
-	return request, err
+	return decoder.Decode((&params))
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, in any) {
