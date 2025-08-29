@@ -129,6 +129,26 @@ func (cfg *serverState) createChirp(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, Chirp(chirp))
 }
 
+func (cfg *serverState) getAllChirps(w http.ResponseWriter, r *http.Request) {
+	// No request body needed
+	// Execute the database query
+	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to retrieve all chirps")
+		return
+	}
+	// Wrap all chirps in JSON-annotated model
+	var chirps []Chirp
+	for _, dbChirp := range dbChirps {
+		chirps = append(chirps, Chirp(dbChirp))
+	}
+	// Write a JSON response with a list of all chirps
+	respondWithJSON(w, http.StatusOK, chirps)
+}
+
 // Valid parameters for a /users request
 type userParameters struct {
 	Email string `json:"email"`
