@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/clayzim/http-servers/internal/auth"
 	"github.com/clayzim/http-servers/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -43,6 +44,8 @@ func main() {
 		log.Fatalf("failed to connect to database: %s\n", err)
 	}
 
+	auth.Initialize()
+
 	mux := http.NewServeMux()
 	server := http.Server{Handler: mux, Addr: ":8080"}
 	srvState := serverState{
@@ -62,6 +65,7 @@ func main() {
 	mux.HandleFunc("GET /api/chirps", srvState.getAllChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", srvState.getChirp)
 	mux.HandleFunc("POST /api/users", srvState.createUser)
+	mux.HandleFunc("POST /api/login", srvState.login)
 
 	err = server.ListenAndServe()
 	if err != nil {

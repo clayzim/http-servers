@@ -253,12 +253,64 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 			"Failed to create user")
 		return
 	}
-	// TODO: Write function to adapt from database.User to models User
-	user := User{
-		ID: dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email: dbUser.Email,
+	respondWithJSON(
+		w,
+		http.StatusCreated,
+		ResponseFrom(dbUser))
+}
+
+func (cfg *serverState) login(w http.ResponseWriter, r *http.Request) {
+	// Read user email & password from request body
+	params := userParameters{}
+	err := readJSONBody(r, &params)
+	if err != nil {
+		// TODO: This could be 400 BadRequest
+		// if their request body isn't valid JSON
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to parse user email or password",
+		)
+		return
 	}
-	respondWithJSON(w, http.StatusCreated, user)
+	email := params.Email
+	password := params.Password
+	// Require non-empty value for email & password
+	if email == "" || password == "" {
+		respondWithError(
+			w,
+			http.StatusBadRequest,
+			"User must provide email and password",
+		)
+		return
+	}
+	// TODO: Maybe internal logging for non ErrNoRows
+	// NEVER return a database.User object in a response
+	// They contain password hashes which should not be leaked
+	dbUser, emailErr := cfg.db.GetUserByEmail(r.Context(), email)
+	var hash string
+	if emailErr != nil {
+		hash = auth.DummyHash
+	} else {
+		hash = dbUser.HashedPassword
+	}
+	// TODO: Ensure constant time for mismatched argon2id versions
+	// TODO: Logic to update hashes on login for outdated parameters
+	// Verify hash regardless of whether email is valid
+	// This mitigates timing-based side channel attacks
+	passErr := auth.CheckPassword(password, hash)
+	if emailErr != nil || passErr != nil {
+		// Fail closed. Any error results in Unauthorized
+		// Same error regardless of whether email exists
+		// Don't create account-exists oracle
+		respondWithError(
+			w,
+			http.StatusUnauthorized,
+			"Incorrect email or password")
+		return
+	}
+	respondWithJSON(
+		w,
+		http.StatusOK,
+		ResponseFrom(dbUser))
 }

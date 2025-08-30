@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"crypto/rand"
 	"errors"
+	"log"
 
 	"github.com/alexedwards/argon2id"
 )
@@ -46,5 +48,24 @@ func CheckPassword(password, hash string) error {
 		return err
 	} else {
 		return ErrMismatchedHashAndPassword
+	}
+}
+
+// Randomized password for DummyHash each run
+var DummyPassword = make([]byte, 32)
+// Valid hash to compare against in constant time
+// Salt is randomized each run: low collision chance
+var DummyHash string
+
+// Ensure this is called before HTTP handlers run
+func Initialize() {
+	// Randomize dummy password
+	// No error handling, crypto/rand.Read always succeeds
+	rand.Read(DummyPassword)
+	var err error
+	// Generate dummy hash using current parameters
+	DummyHash, err = HashPassword(string(DummyPassword))
+	if err != nil {
+		log.Fatal("Failed to initialize auth package")
 	}
 }
