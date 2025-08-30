@@ -19,4 +19,6 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email string `json:"email"`
+	// These models are for serializing output to JSON
+	// so they should never include password hashes
 }

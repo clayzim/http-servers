@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"unicode/utf8"
 
+	"github.com/clayzim/http-servers/internal/auth"
 	"github.com/clayzim/http-servers/internal/database"
 	"github.com/google/uuid"
 )
@@ -200,28 +201,51 @@ func (cfg *serverState) getChirp(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, Chirp(dbChirp))
 }
 
-// Valid parameters for a /users request
+// Valid parameters for a /users POST request
 type userParameters struct {
 	Email string `json:"email"`
+	Password string `json:"password"`
 }
 
 func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
-	// Read user email
+	// Read user email & password
 	params := userParameters{}
 	err := readJSONBody(r, &params)
 	if err != nil {
 		respondWithError(
 			w,
 			http.StatusInternalServerError,
-			"Failed to parse user email",
+			"Failed to parse user email or password",
 		)
 		return
 	}
-	// TODO: Handle zero value (empty email)
-	// Duplicates are disallowed by database schema
+	// Duplicate emails are disallowed by database schema
 	email := params.Email
-
-	user, err := cfg.db.CreateUser(r.Context(), email)
+	password := params.Password
+	// Require non-empty value for email & password
+	if email == "" || password == "" {
+		respondWithError(
+			w,
+			http.StatusBadRequest,
+			"User must provide email and password",
+		)
+		return
+	}
+	// Calculate hash for password
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		respondWithError(
+			w,
+			http.StatusInternalServerError,
+			"Failed to hash user's password",
+		)
+		return
+	}
+	p := database.CreateUserParams{
+		Email: email,
+		HashedPassword: hash,
+	}
+	dbUser, err := cfg.db.CreateUser(r.Context(), p)
 	if err != nil {
 		respondWithError(
 			w,
@@ -229,5 +253,12 @@ func (cfg *serverState) createUser(w http.ResponseWriter, r *http.Request) {
 			"Failed to create user")
 		return
 	}
-	respondWithJSON(w, http.StatusCreated, User(user))
+	// TODO: Write function to adapt from database.User to models User
+	user := User{
+		ID: dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email: dbUser.Email,
+	}
+	respondWithJSON(w, http.StatusCreated, user)
 }
